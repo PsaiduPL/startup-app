@@ -1,16 +1,13 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Flex, Layout, Rect, Spacing},
+    layout::{Constraint, Layout, Rect, Spacing},
     macros::{span, text},
     style::{Color, Modifier, Style, Stylize},
-    symbols::line::THICK_TOP_LEFT,
-    text::{self, Line, Span, Text},
-    widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Widget},
+    text::{Line, Text},
+    widgets::{Block, List, Padding, Paragraph},
 };
 
-use crate::{state::{AppState, Startup}, utils::formatted_time};
-
-
+use crate::{state::AppState, utils::formatted_time};
 
 pub fn render(frame: &mut Frame, app_state: &mut AppState) {
     let main_layout = Layout::default()
@@ -36,7 +33,7 @@ fn render_title_area(frame: &mut Frame, title_area: Rect) {
         .block(Block::bordered().merge_borders(ratatui::symbols::merge::MergeStrategy::Exact));
     frame.render_widget(title, second);
     frame.render_widget(
-        Paragraph::new(format!("{:}", formatted_time()))
+        Paragraph::new(formatted_time())
             .light_yellow()
             .alignment(ratatui::layout::HorizontalAlignment::Right)
             .block(Block::new().padding(Padding {

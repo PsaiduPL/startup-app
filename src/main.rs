@@ -3,8 +3,6 @@ mod loader;
 mod state;
 mod ui;
 mod utils;
-use std::collections::HashMap;
-use std::fmt::Error;
 
 use crate::{
     loader::load_with_home_override,
@@ -12,7 +10,6 @@ use crate::{
     ui::render,
 };
 use crossterm::event::{self, KeyCode, KeyEvent};
-use jiff::tz::Dst::No;
 use ratatui::widgets::ListState;
 
 use crate::state::Startup;
@@ -32,7 +29,7 @@ fn load_startup() -> Startup {
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let startup = load_startup();
-    let mut list_state = ListState::default().with_selected(Some(0));
+    let list_state = ListState::default().with_selected(Some(0));
     let mut app_state = AppState {
         startup: startup,
         mode: AppMode::Normal,
@@ -73,10 +70,8 @@ fn handle_normal_mode(key_event: KeyEvent, app_state: &mut AppState) -> Option<A
         KeyCode::Char('q') | KeyCode::Esc => return Some(AppSignal::Quit),
         KeyCode::Char(':') => app_state.mode = AppMode::Command,
         KeyCode::Enter => {
-            let Some(current_profile) = app_state.component_state.profile_list_state.selected()
-            else {
-                return None;
-            };
+            let current_profile = app_state.component_state.profile_list_state.selected()?;
+
             let profile = app_state.startup.profiles[current_profile].clone();
 
             std::thread::spawn(move || {

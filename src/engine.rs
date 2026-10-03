@@ -1,6 +1,5 @@
 use std::{
-    io::{self, Stderr},
-    ops::Deref,
+    io::{self},
     process::{Command, Stdio},
 };
 
@@ -31,7 +30,7 @@ fn fire_app(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| CommandExecStatus::Failure(e));
+        .map_err(CommandExecStatus::Failure);
 
     match spawn_handle {
         Ok(_) => CommandExecStatus::Success,

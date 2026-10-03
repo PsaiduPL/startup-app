@@ -1,6 +1,5 @@
 use std::{error::Error, fs::OpenOptions, io::BufReader, path::Path};
 
-use ratatui::layout::Flex::Start;
 use serde_json::Error as SerdeError;
 
 use crate::Startup;
