@@ -1,61 +1,22 @@
-mod enginge;
+mod engine;
 mod loader;
+mod state;
 mod ui;
 mod utils;
-use std::{collections::HashMap, fmt::Error};
-
-use crossterm::event::{self, KeyCode, KeyEvent};
-use jiff::tz::Dst::No;
-use ratatui::{
-    layout::Constraint,
-    macros::row,
-    style::{Color, Style},
-    widgets::{Cell, List, ListState, Row, Table},
-};
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt::Error;
 
 use crate::{
-    loader::{load_config_app, load_with_home_override},
-    ui::{AppState, render},
+    loader::load_with_home_override,
+    state::{AppMode, AppSignal, AppState, ComponentState},
+    ui::render,
 };
+use crossterm::event::{self, KeyCode, KeyEvent};
+use jiff::tz::Dst::No;
+use ratatui::widgets::ListState;
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Startup {
-    #[serde(rename = "defaultProfile")]
-    pub default_profile: String,
-    pub profiles: Vec<StartupProfile>,
-}
+use crate::state::Startup;
 
-impl Default for Startup {
-    fn default() -> Self {
-        Self {
-            default_profile: String::from("example"),
-            profiles: vec![StartupProfile {
-                profile: String::from("example"),
-                apps: vec![],
-            }],
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct StartupProfile {
-    profile: String,
-    apps: Vec<StartupApp>,
-}
-
-// copy implicit
-// clone explicit
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StartupApp {
-    pub name: String,
-    pub path: String,
-    pub args: Vec<String>,
-}
-
-enum AppSignal {
-    Quit,
-}
 fn load_startup() -> Startup {
     #[cfg(debug_assertions)]
     {
@@ -74,8 +35,8 @@ fn main() -> color_eyre::Result<()> {
     let mut list_state = ListState::default().with_selected(Some(0));
     let mut app_state = AppState {
         startup: startup,
-        mode: ui::AppMode::Normal,
-        component_state: ui::ComponentState {
+        mode: AppMode::Normal,
+        component_state: ComponentState {
             profile_list_state: list_state,
         },
     };
@@ -85,8 +46,8 @@ fn main() -> color_eyre::Result<()> {
             terminal.draw(|frame| render(frame, &mut app_state))?;
             if let Some(key) = event::read()?.as_key_press_event() {
                 let signal = match app_state.mode {
-                    ui::AppMode::Normal => handle_normal_mode(key, &mut app_state),
-                    ui::AppMode::Command => handle_command_event(key, &mut app_state),
+                    AppMode::Normal => handle_normal_mode(key, &mut app_state),
+                    AppMode::Command => handle_command_event(key, &mut app_state),
                 };
                 match signal {
                     Some(AppSignal::Quit) => break Ok(()),
@@ -110,7 +71,7 @@ fn handle_normal_mode(key_event: KeyEvent, app_state: &mut AppState) -> Option<A
                 .select_previous();
         }
         KeyCode::Char('q') | KeyCode::Esc => return Some(AppSignal::Quit),
-        KeyCode::Char(':') => app_state.mode = ui::AppMode::Command,
+        KeyCode::Char(':') => app_state.mode = AppMode::Command,
         KeyCode::Enter => {
             let Some(current_profile) = app_state.component_state.profile_list_state.selected()
             else {
@@ -119,7 +80,7 @@ fn handle_normal_mode(key_event: KeyEvent, app_state: &mut AppState) -> Option<A
             let profile = app_state.startup.profiles[current_profile].clone();
 
             std::thread::spawn(move || {
-                enginge::fire_profile(&profile);
+                engine::fire_profile(&profile);
             });
         }
         _ => {}
@@ -134,7 +95,7 @@ fn handle_command_event(key_event: KeyEvent, app_state: &mut AppState) -> Option
         _ => {}
     };
 
-    app_state.mode = ui::AppMode::Normal;
+    app_state.mode = AppMode::Normal;
     None
 }
 

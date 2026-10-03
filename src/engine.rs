@@ -4,10 +4,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::{
-    Startup, StartupApp, StartupProfile,
-    enginge::CommandExecStatus::{Failure, Success},
-};
+use crate::state::{StartupApp, StartupProfile};
 
 pub enum CommandExecStatus {
     Success,
@@ -22,16 +19,22 @@ pub fn fire_profile(profile: &StartupProfile) -> Vec<(StartupApp, CommandExecSta
         .collect()
 }
 
-fn fire_app(StartupApp { name, path, args }: &StartupApp) -> CommandExecStatus {
+fn fire_app(
+    StartupApp {
+        name: _,
+        path: path,
+        args: args,
+    }: &StartupApp,
+) -> CommandExecStatus {
     let spawn_handle = Command::new(path)
         .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| Failure(e));
+        .map_err(|e| CommandExecStatus::Failure(e));
 
     match spawn_handle {
-        Ok(_) => Success,
+        Ok(_) => CommandExecStatus::Success,
         Err(err) => err,
     }
 }

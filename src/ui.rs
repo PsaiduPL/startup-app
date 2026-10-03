@@ -8,25 +8,9 @@ use ratatui::{
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Widget},
 };
 
-use crate::{Startup, StartupApp, utils::formatted_time};
+use crate::{state::{AppState, Startup}, utils::formatted_time};
 
-#[derive(Debug)]
-pub struct AppState {
-    pub startup: Startup,
-    pub mode: AppMode,
-    pub component_state: ComponentState,
-}
 
-#[derive(Debug)]
-pub enum AppMode {
-    Normal,
-    Command,
-}
-
-#[derive(Debug)]
-pub struct ComponentState {
-    pub profile_list_state: ListState,
-}
 
 pub fn render(frame: &mut Frame, app_state: &mut AppState) {
     let main_layout = Layout::default()

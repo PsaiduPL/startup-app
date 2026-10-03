@@ -11,6 +11,7 @@ pub enum StartupLoadingError {
     ParsingJsonFile(SerdeError),
     ConfigFileIsNotAJson,
 }
+
 impl std::fmt::Display for StartupLoadingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
@@ -50,7 +51,7 @@ enum ConfigPathValidationError {
 }
 
 fn validate_config_path(config_path: &Path) -> Result<(), ConfigPathValidationError> {
-    if config_path.try_exists().is_ok_and(|exists|!exists) {
+    if config_path.try_exists().is_ok_and(|exists| !exists) {
         return Err(ConfigPathValidationError::NoConfigFileFound);
     }
 
@@ -74,7 +75,6 @@ fn handle_config_path_error(
                 .unwrap();
             let default_app = Startup::default();
             serde_json::to_writer_pretty(file, &default_app).unwrap();
-
         }
         ConfigPathValidationError::ConfigFileIsNotAJson => {
             return Err(StartupLoadingError::ConfigFileIsNotAJson);
