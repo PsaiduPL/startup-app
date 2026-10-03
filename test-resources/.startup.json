@@ -1,0 +1,50 @@
+{
+    "defaultProfile": "work",
+    "profiles": [
+        {
+            "profile": "work",
+            "apps": [
+                {
+                    "name": "Zed",
+                    "path": "zed",
+                    "args": ["."]
+                },
+                {
+                    "name": "Docker",
+                    "path": "docker",
+                    "args": ["compose", "up     "]
+                },
+                {
+                    "name": "Chromes",
+                    "path": "zed",
+                    "args": []
+                }
+            ]
+        },
+        {
+            "profile": "home",
+            "apps": [
+                {
+                    "name": "Postman",
+                    "path": "postman",
+                    "args": ["--new"]
+                },
+                {
+                    "name": "Zed",
+                    "path": "zed",
+                    "args": ["."]
+                }
+            ]
+        },
+        {
+            "profile": "rust",
+            "apps": [
+                {
+                    "name": "top",
+                    "path": "top",
+                    "args": []
+                }
+            ]
+        }
+    ]
+}
