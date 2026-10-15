@@ -1,12 +1,12 @@
+mod components;
 mod engine;
 mod loader;
 mod state;
 mod ui;
 mod utils;
-
 use crate::{
-    loader::load_with_home_override,
-    state::{AppMode, AppSignal, AppState, ComponentState},
+    loader::{load_config_app, load_with_home_override},
+    state::{AppMode, AppSignal, AppState, ComponentState, SharedBuffer},
     ui::render,
 };
 use crossterm::event::{self, KeyCode, KeyEvent};
@@ -36,6 +36,8 @@ fn main() -> color_eyre::Result<()> {
         component_state: ComponentState {
             profile_list_state: list_state,
         },
+        current_event: None,
+        shared_buffer: SharedBuffer::default(),
     };
 
     ratatui::run(|terminal| {
@@ -43,6 +45,7 @@ fn main() -> color_eyre::Result<()> {
             terminal.draw(|frame| render(frame, &mut app_state))?;
             if let Some(key) = event::read()?.as_key_press_event() {
                 let signal = match app_state.mode {
+                    AppMode::BufferWrite => handle_buffer_write(key, &mut app_state),
                     AppMode::Normal => handle_normal_mode(key, &mut app_state),
                     AppMode::Command => handle_command_event(key, &mut app_state),
                 };
@@ -53,6 +56,33 @@ fn main() -> color_eyre::Result<()> {
             }
         }
     })
+}
+
+fn handle_buffer_write(key: KeyEvent, app_state: &mut AppState) -> Option<AppSignal> {
+    match key.code {
+        KeyCode::Char(any) => app_state.shared_buffer.insert_under_cursor(any),
+        KeyCode::Esc => {
+            app_state.mode = AppMode::Normal;
+            app_state.current_event = None;
+        }
+        KeyCode::Backspace => {
+            app_state.shared_buffer.delete_under_cursor();
+        }
+        KeyCode::Left => {
+            app_state.shared_buffer.left();
+        }
+        KeyCode::Right => {
+            app_state.shared_buffer.right();
+        }
+        KeyCode::Enter => {
+            if let Some(event) = app_state.current_event.clone() {
+                app_state.current_event =
+                    Some(event.transition_to(state::EventState::WaitingCompletation));
+            };
+        }
+        _ => {}
+    };
+    None
 }
 
 fn handle_normal_mode(key_event: KeyEvent, app_state: &mut AppState) -> Option<AppSignal> {
@@ -84,9 +114,12 @@ fn handle_normal_mode(key_event: KeyEvent, app_state: &mut AppState) -> Option<A
 }
 fn handle_command_event(key_event: KeyEvent, app_state: &mut AppState) -> Option<AppSignal> {
     match key_event.code {
-        KeyCode::Char('p') => {
-            app_state.startup.profiles[0].profile = String::from("XD");
+        KeyCode::Char('n') => {
+            app_state.current_event = Some(state::AppEvent::CreateNewProfile(
+                state::EventState::Started,
+            ))
         }
+        KeyCode::Char('d') => app_state.current_event = Some(state::AppEvent::DeleteCurrentProfile),
         _ => {}
     };
 
