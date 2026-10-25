@@ -1,4 +1,6 @@
-use crossterm::event::Event;
+use std::sync::mpsc::Sender;
+
+use crossterm::event::{Event, KeyEvent};
 use ratatui::{buffer, widgets::ListState};
 use serde::{Deserialize, Serialize};
 
@@ -7,8 +9,10 @@ pub struct AppState {
     pub startup: Startup,
     pub mode: AppMode,
     pub component_state: ComponentState,
+    pub current_list_type: ListableComponentType,
     pub current_event: Option<AppEvent>,
     pub shared_buffer: SharedBuffer,
+    pub emitter: Sender<UIEvent>,
 }
 
 impl AppState {
@@ -22,6 +26,25 @@ impl AppState {
 
     pub fn clear_buffer(&mut self) {
         self.shared_buffer.clear();
+    }
+
+    pub fn send_ui_event(&self, event: UIEvent) {
+        self.emitter.send(event);
+    }
+
+    pub fn set_app_event(&mut self, event: AppEvent) {
+        self.current_event = Some(event);
+    }
+
+    pub fn select_idx_from_state(&self, component_type: ListableComponentType) -> Option<usize> {
+        match component_type {
+            ListableComponentType::ProfileState => {
+                self.component_state.profile_list_state.selected()
+            }
+            ListableComponentType::ProfileAppsState => {
+                self.component_state.profile_apps_state.selected()
+            }
+        }
     }
 }
 
@@ -42,6 +65,10 @@ pub enum AppEvent {
     RenameProfile(EventState),
     DeleteCurrentProfile,
     Default,
+    Up,
+    Down,
+    Left,
+    Right,
 }
 impl AppEvent {
     pub fn transition_to(self, new_state: EventState) -> AppEvent {
@@ -61,9 +88,15 @@ pub enum EventState {
 }
 
 #[derive(Debug)]
+pub enum ListableComponentType {
+    ProfileState,
+    ProfileAppsState,
+}
+
+#[derive(Debug)]
 pub struct ComponentState {
     pub profile_list_state: ListState,
-    // pub profile_apps_state: ListState,
+    pub profile_apps_state: ListState,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -126,6 +159,9 @@ impl SharedBuffer {
         self.right();
     }
     pub fn delete_under_cursor(&mut self) {
+        if (self.cursor_position == 0) {
+            return;
+        }
         let next_cursor = clamp_min(self.cursor_position - 1, 0);
         self.buffer.remove(next_cursor);
         self.left();
@@ -175,4 +211,11 @@ where
         return max;
     }
     return val;
+}
+
+pub enum UIEvent {
+    Keyboard(KeyEvent),
+    Refresh,
+    Kill,
+    Startup,
 }

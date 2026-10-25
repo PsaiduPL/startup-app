@@ -18,6 +18,51 @@
                     "name": "Chromes",
                     "path": "zed",
                     "args": []
+                },
+                {
+                    "name": "Zed",
+                    "path": "zed",
+                    "args": ["."]
+                },
+                {
+                    "name": "Docker",
+                    "path": "docker",
+                    "args": ["compose", "up     "]
+                },
+                {
+                    "name": "Chromes",
+                    "path": "zed",
+                    "args": []
+                },
+                {
+                    "name": "Zed",
+                    "path": "zed",
+                    "args": ["."]
+                },
+                {
+                    "name": "Docker",
+                    "path": "docker",
+                    "args": ["compose", "up     "]
+                },
+                {
+                    "name": "Chromes",
+                    "path": "zed",
+                    "args": []
+                },
+                {
+                    "name": "Zed",
+                    "path": "zed",
+                    "args": ["."]
+                },
+                {
+                    "name": "Docker",
+                    "path": "docker",
+                    "args": ["compose", "up     "]
+                },
+                {
+                    "name": "Chromes",
+                    "path": "zed",
+                    "args": []
                 }
             ]
         },

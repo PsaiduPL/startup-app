@@ -4,9 +4,14 @@ mod loader;
 mod state;
 mod ui;
 mod utils;
+use std::sync::mpsc::{self, Sender};
+
 use crate::{
     loader::{load_config_app, load_with_home_override},
-    state::{AppMode, AppSignal, AppState, ComponentState, SharedBuffer},
+    state::{
+        AppEvent::{Down, Left, Right, Up},
+        AppMode, AppSignal, AppState, ComponentState, SharedBuffer, UIEvent,
+    },
     ui::render,
 };
 use crossterm::event::{self, KeyCode, KeyEvent};
@@ -25,32 +30,45 @@ fn load_startup() -> Startup {
         load_config_app().unwrap()
     }
 }
+//TODO change how the events with CreateProfile are handled as they have to be similiarlly hanlded with app list
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let startup = load_startup();
     let list_state = ListState::default().with_selected(Some(0));
+    let app_state = ListState::default().with_selected(None);
+    let (emitter, sink) = mpsc::channel::<UIEvent>();
     let mut app_state = AppState {
         startup: startup,
         mode: AppMode::Normal,
         component_state: ComponentState {
             profile_list_state: list_state,
+            profile_apps_state: app_state,
         },
+        current_list_type: state::ListableComponentType::ProfileState,
         current_event: None,
         shared_buffer: SharedBuffer::default(),
+        emitter: emitter.clone(),
     };
 
+    handle_keyboard_events_off_thread(emitter.clone());
     ratatui::run(|terminal| {
         loop {
             terminal.draw(|frame| render(frame, &mut app_state))?;
-            if let Some(key) = event::read()?.as_key_press_event() {
-                let signal = match app_state.mode {
-                    AppMode::BufferWrite => handle_buffer_write(key, &mut app_state),
-                    AppMode::Normal => handle_normal_mode(key, &mut app_state),
-                    AppMode::Command => handle_command_event(key, &mut app_state),
-                };
-                match signal {
-                    Some(AppSignal::Quit) => break Ok(()),
+            if let Ok(event) = sink.recv() {
+                match event {
+                    UIEvent::Keyboard(key) => {
+                        let signal = match app_state.mode {
+                            AppMode::BufferWrite => handle_buffer_write(key, &mut app_state),
+                            AppMode::Normal => handle_normal_mode(key, &mut app_state),
+                            AppMode::Command => handle_command_event(key, &mut app_state),
+                        };
+                        match signal {
+                            Some(AppSignal::Quit) => return Ok(()),
+                            _ => {}
+                        }
+                    }
+                    UIEvent::Kill => return Ok(()),
                     _ => {}
                 }
             }
@@ -88,14 +106,16 @@ fn handle_buffer_write(key: KeyEvent, app_state: &mut AppState) -> Option<AppSig
 fn handle_normal_mode(key_event: KeyEvent, app_state: &mut AppState) -> Option<AppSignal> {
     match key_event.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            app_state.component_state.profile_list_state.select_next();
-            {}
+            app_state.set_app_event(Down);
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app_state
-                .component_state
-                .profile_list_state
-                .select_previous();
+            app_state.set_app_event(Up);
+        }
+        KeyCode::Left => {
+            app_state.set_app_event(Left);
+        }
+        KeyCode::Right => {
+            app_state.set_app_event(Right);
         }
         KeyCode::Char('q') | KeyCode::Esc => return Some(AppSignal::Quit),
         KeyCode::Char(':') => app_state.mode = AppMode::Command,
@@ -115,16 +135,48 @@ fn handle_normal_mode(key_event: KeyEvent, app_state: &mut AppState) -> Option<A
 fn handle_command_event(key_event: KeyEvent, app_state: &mut AppState) -> Option<AppSignal> {
     match key_event.code {
         KeyCode::Char('n') => {
+            app_state.mode(AppMode::BufferWrite);
             app_state.current_event = Some(state::AppEvent::CreateNewProfile(
                 state::EventState::Started,
-            ))
+            ));
+            return None;
         }
         KeyCode::Char('d') => app_state.current_event = Some(state::AppEvent::DeleteCurrentProfile),
+        KeyCode::Char('r') => {
+            app_state.mode(AppMode::BufferWrite);
+            app_state.current_event =
+                Some(state::AppEvent::RenameProfile(state::EventState::Started));
+            return None;
+        }
         _ => {}
     };
 
     app_state.mode = AppMode::Normal;
     None
+}
+
+fn handle_keyboard_events_off_thread(emitter: Sender<UIEvent>) {
+    std::thread::spawn(move || {
+        let Err(_) = std::panic::catch_unwind(|| {
+            emitter.send(UIEvent::Startup).unwrap();
+            loop {
+                if let event = event::read().unwrap() {
+                    match event {
+                        event::Event::Key(key) => {
+                            if key.is_press() {
+                                emitter.send(UIEvent::Keyboard(key));
+                            }
+                        }
+                        event::Event::Resize(_, _) => {
+                            emitter.send(UIEvent::Refresh);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+        emitter.send(UIEvent::Kill);
+    });
 }
 
 fn fire_profile(app_state: &mut AppState) {}
