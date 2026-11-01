@@ -1,8 +1,11 @@
-use std::sync::mpsc::Sender;
+use std::{collections::HashMap, sync::mpsc::Sender};
 
 use crossterm::event::{Event, KeyEvent};
+use jiff::tz::Dst::No;
 use ratatui::{buffer, widgets::ListState};
 use serde::{Deserialize, Serialize};
+
+use crate::state::ShortcutEvent::{New, Rename};
 
 #[derive(Debug)]
 pub struct AppState {
@@ -11,8 +14,9 @@ pub struct AppState {
     pub component_state: ComponentState,
     pub current_list_type: ListableComponentType,
     pub current_event: Option<AppEvent>,
-    pub shared_buffer: SharedBuffer,
+    pub buffer: MultiStageBuffer,
     pub emitter: Sender<UIEvent>,
+    pub callback_queue: std::collections::VecDeque<HandleEventCallbackCommand>,
 }
 
 impl AppState {
@@ -25,7 +29,7 @@ impl AppState {
     }
 
     pub fn clear_buffer(&mut self) {
-        self.shared_buffer.clear();
+        self.buffer.clear();
     }
 
     pub fn send_ui_event(&self, event: UIEvent) {
@@ -36,7 +40,7 @@ impl AppState {
         self.current_event = Some(event);
     }
 
-    pub fn select_idx_from_state(&self, component_type: ListableComponentType) -> Option<usize> {
+    pub fn select_idx_from_state(&self, component_type: &ListableComponentType) -> Option<usize> {
         match component_type {
             ListableComponentType::ProfileState => {
                 self.component_state.profile_list_state.selected()
@@ -45,6 +49,18 @@ impl AppState {
                 self.component_state.profile_apps_state.selected()
             }
         }
+    }
+
+    pub fn select_idx_from_current_component(&self) -> Option<usize> {
+        self.select_idx_from_state(&self.current_list_type)
+    }
+
+    pub fn push_callback_event(&mut self, event: HandleEventCallbackCommand) {
+        self.callback_queue.push_back(event);
+    }
+
+    pub fn pop_callback_event(&mut self) -> Option<HandleEventCallbackCommand> {
+        self.callback_queue.pop_front()
     }
 }
 
@@ -61,20 +77,33 @@ pub enum AppSignal {
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
+    KeyboardShortcutEvent(ShortcutEvent),
     CreateNewProfile(EventState),
     RenameProfile(EventState),
-    DeleteCurrentProfile,
     Default,
     Up,
     Down,
     Left,
     Right,
 }
+
+#[derive(Debug, Clone)]
+pub enum ShortcutEvent {
+    Rename(EventState),
+    New(EventState),
+    Delete,
+}
+
 impl AppEvent {
     pub fn transition_to(self, new_state: EventState) -> AppEvent {
         match self {
             AppEvent::CreateNewProfile(_) => AppEvent::CreateNewProfile(new_state),
             AppEvent::RenameProfile(_) => AppEvent::RenameProfile(new_state),
+            AppEvent::KeyboardShortcutEvent(event) => match event {
+                ShortcutEvent::Rename(_) => AppEvent::KeyboardShortcutEvent(Rename(new_state)),
+                ShortcutEvent::New(_) => AppEvent::KeyboardShortcutEvent(New(new_state)),
+                _ => AppEvent::Default,
+            },
             _ => AppEvent::Default,
         }
     }
@@ -85,9 +114,39 @@ pub enum EventState {
     Started,
     WaitingCompletation,
     Completed,
+    MultiStage(usize), // stage and input from specified stage
 }
 
-#[derive(Debug)]
+pub enum ApplicationAddStage {
+    Name = 3,
+    Path = 2,
+    Args = 1,
+    End = 0,
+}
+
+impl ApplicationAddStage {
+    pub fn from_stage(stage: usize) -> ApplicationAddStage {
+        match stage {
+            3 => Self::Name,
+            2 => Self::Path,
+            1 => Self::Args,
+            _ => Self::End,
+        }
+    }
+    pub fn to_stage(&self) -> usize {
+        match self {
+            ApplicationAddStage::Args => 1,
+            ApplicationAddStage::Path => 2,
+            ApplicationAddStage::Name => 3,
+            _ => 0,
+        }
+    }
+    pub fn next(self) -> ApplicationAddStage {
+        ApplicationAddStage::from_stage(self.to_stage() - 1)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ListableComponentType {
     ProfileState,
     ProfileAppsState,
@@ -131,6 +190,54 @@ pub struct StartupApp {
     pub name: String,
     pub path: String,
     pub args: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct MultiStageBuffer {
+    buffers: Vec<SharedBuffer>,
+    current_stage: usize,
+}
+
+impl std::ops::Deref for MultiStageBuffer {
+    type Target = SharedBuffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.buffers.get(self.current_stage).expect("Invalid stage")
+    }
+}
+
+impl std::ops::DerefMut for MultiStageBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.buffers
+            .get_mut(self.current_stage)
+            .expect("Invalid stage")
+    }
+}
+
+impl MultiStageBuffer {
+    pub fn new(stage_count: usize) -> MultiStageBuffer {
+        let mut buffers = vec![];
+        for _ in 0..stage_count {
+            buffers.push(SharedBuffer::default());
+        }
+        Self {
+            buffers: buffers,
+            current_stage: 0,
+        }
+    }
+
+    pub fn buffer_from_stage(&self, stage: usize) -> Option<&SharedBuffer> {
+        self.buffers.get(stage)
+    }
+
+    pub fn next(&mut self) -> Option<usize> {
+        let next = self.current_stage + 1;
+        if next >= self.buffers.len() {
+            return None;
+        }
+        self.current_stage = next;
+        Some(next)
+    }
 }
 
 #[derive(Debug)]
@@ -212,10 +319,14 @@ where
     }
     return val;
 }
-
+#[derive(Debug)]
 pub enum UIEvent {
     Keyboard(KeyEvent),
     Refresh,
     Kill,
     Startup,
+}
+#[derive(Debug)]
+pub enum HandleEventCallbackCommand {
+    DisplayPopup(String), // title
 }

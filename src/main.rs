@@ -4,13 +4,18 @@ mod loader;
 mod state;
 mod ui;
 mod utils;
-use std::sync::mpsc::{self, Sender};
+use std::{
+    collections::VecDeque,
+    sync::mpsc::{self, Sender},
+};
 
 use crate::{
     loader::{load_config_app, load_with_home_override},
     state::{
-        AppEvent::{Down, Left, Right, Up},
-        AppMode, AppSignal, AppState, ComponentState, SharedBuffer, UIEvent,
+        AppEvent::{self, Down, Left, Right, Up},
+        AppMode, AppSignal, AppState, ComponentState,
+        EventState::Started,
+        MultiStageBuffer, SharedBuffer, UIEvent,
     },
     ui::render,
 };
@@ -22,7 +27,7 @@ use crate::state::Startup;
 fn load_startup() -> Startup {
     #[cfg(debug_assertions)]
     {
-        load_with_home_override("/root/project/rust/startup-app/test-resources").unwrap()
+        load_with_home_override("/Users/psaidu/coding/rust/startup-app/test-resources").unwrap()
     }
 
     #[cfg(not(debug_assertions))]
@@ -30,7 +35,7 @@ fn load_startup() -> Startup {
         load_config_app().unwrap()
     }
 }
-//TODO change how the events with CreateProfile are handled as they have to be similiarlly hanlded with app list
+//TODO figure out how to handle popup as last operation, maybe callback event are okay or queue
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -47,8 +52,9 @@ fn main() -> color_eyre::Result<()> {
         },
         current_list_type: state::ListableComponentType::ProfileState,
         current_event: None,
-        shared_buffer: SharedBuffer::default(),
+        buffer: MultiStageBuffer::new(1),
         emitter: emitter.clone(),
+        callback_queue: VecDeque::with_capacity(20),
     };
 
     handle_keyboard_events_off_thread(emitter.clone());
@@ -78,19 +84,19 @@ fn main() -> color_eyre::Result<()> {
 
 fn handle_buffer_write(key: KeyEvent, app_state: &mut AppState) -> Option<AppSignal> {
     match key.code {
-        KeyCode::Char(any) => app_state.shared_buffer.insert_under_cursor(any),
+        KeyCode::Char(any) => app_state.buffer.insert_under_cursor(any),
         KeyCode::Esc => {
             app_state.mode = AppMode::Normal;
             app_state.current_event = None;
         }
         KeyCode::Backspace => {
-            app_state.shared_buffer.delete_under_cursor();
+            app_state.buffer.delete_under_cursor();
         }
         KeyCode::Left => {
-            app_state.shared_buffer.left();
+            app_state.buffer.left();
         }
         KeyCode::Right => {
-            app_state.shared_buffer.right();
+            app_state.buffer.right();
         }
         KeyCode::Enter => {
             if let Some(event) = app_state.current_event.clone() {
@@ -136,16 +142,21 @@ fn handle_command_event(key_event: KeyEvent, app_state: &mut AppState) -> Option
     match key_event.code {
         KeyCode::Char('n') => {
             app_state.mode(AppMode::BufferWrite);
-            app_state.current_event = Some(state::AppEvent::CreateNewProfile(
-                state::EventState::Started,
-            ));
+            app_state.set_app_event(AppEvent::KeyboardShortcutEvent(state::ShortcutEvent::New(
+                Started,
+            )));
             return None;
         }
-        KeyCode::Char('d') => app_state.current_event = Some(state::AppEvent::DeleteCurrentProfile),
+        KeyCode::Char('d') => {
+            app_state.set_app_event(AppEvent::KeyboardShortcutEvent(
+                state::ShortcutEvent::Delete,
+            ));
+        }
         KeyCode::Char('r') => {
             app_state.mode(AppMode::BufferWrite);
-            app_state.current_event =
-                Some(state::AppEvent::RenameProfile(state::EventState::Started));
+            app_state.set_app_event(AppEvent::KeyboardShortcutEvent(
+                state::ShortcutEvent::Rename(Started),
+            ));
             return None;
         }
         _ => {}

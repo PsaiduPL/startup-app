@@ -9,8 +9,13 @@ use ratatui::{
 
 use crate::{
     state::{
-        AppEvent, AppMode::Normal, AppState, EventState, ListableComponentType::{self, ProfileAppsState}, StartupProfile, UIEvent,
-    }, utils::formatted_time,
+        AppEvent,
+        AppMode::Normal,
+        AppState, EventState,
+        ListableComponentType::{self, ProfileAppsState},
+        ShortcutEvent, StartupApp, StartupProfile, UIEvent,
+    },
+    utils::formatted_time,
 };
 
 pub fn render(frame: &mut Frame, app_state: &mut AppState) {
@@ -24,6 +29,7 @@ pub fn render(frame: &mut Frame, app_state: &mut AppState) {
     }
     render_title_area(frame, app_state, title_area);
     render_app_area(frame, app_state, app_area);
+    handle_callback_event(frame, app_state);
 }
 
 // title layout
@@ -93,7 +99,7 @@ pub fn render_list(frame: &mut Frame, area: Rect, app_state: &mut AppState) {
 }
 
 pub fn render_child_list(frame: &mut Frame, area: Rect, app_state: &mut AppState) {
-    let selected = app_state.select_idx_from_state(ListableComponentType::ProfileState);
+    let selected = app_state.select_idx_from_state(&ListableComponentType::ProfileState);
     if selected.is_none() {
         return;
     }
@@ -126,98 +132,41 @@ pub fn render_child_list(frame: &mut Frame, area: Rect, app_state: &mut AppState
         .highlight_style(Style::new().bg(Color::LightYellow).fg(Color::Black))
         .block(Block::bordered().merge_borders(ratatui::symbols::merge::MergeStrategy::Exact));
 
-    frame.render_stateful_widget(list, area, &mut app_state.component_state.profile_apps_state);
+    frame.render_stateful_widget(
+        list,
+        area,
+        &mut app_state.component_state.profile_apps_state,
+    );
 }
 
 fn handle_event(frame: &mut Frame, app_state: &mut AppState, app_event: AppEvent) {
     match app_event {
-        AppEvent::CreateNewProfile(state) => {
-            match state {
-                EventState::WaitingCompletation => {
-                    app_state.startup.profiles.push(StartupProfile {
-                        profile: app_state.shared_buffer.to_string(),
-                        apps: vec![],
-                    });
-                    app_state.clear_event();
-                    app_state.clear_buffer();
-                    app_state.mode(crate::state::AppMode::Normal);
-                    app_state.send_ui_event(UIEvent::Refresh);
-                    return;
-                }
-                _ => {}
-            };
-            let popup_block = Block::bordered().title("Create new profile");
-            let centered_area = frame
-                .area()
-                .centered(Constraint::Percentage(60), Constraint::Percentage(20));
-            // clears out any background in the area before rendering the popup
-            frame.render_widget(Clear, centered_area);
-            let text: String = app_state.shared_buffer.to_string();
-
-            let pivot = app_state.shared_buffer.position();
-            let (left, cursor, right) = split_text_by_cursor(&text, pivot);
-            let text = line![left, cursor.bold(), right];
-            let paragraph = Paragraph::new(text).block(popup_block);
-            frame.render_widget(paragraph, centered_area);
-        }
-        AppEvent::RenameProfile(state) => {
-            match state {
-                EventState::WaitingCompletation => {
-                    let Some(current_idx) =
-                        app_state.select_idx_from_state(ListableComponentType::ProfileState)
-                    else {
-                        return;
-                    };
-                    let Some(profile) = app_state.startup.profiles.get_mut(current_idx) else {
-                        return;
-                    };
-                    profile.profile = app_state.shared_buffer.to_string();
-
-                    app_state.clear_event();
-                    app_state.clear_buffer();
-                    app_state.mode(Normal);
-                    app_state.send_ui_event(UIEvent::Refresh);
-                    return;
-                }
-                _ => {}
-            }
-            let popup_block = Block::bordered().title("Rename current profile");
-            let centered_area = frame
-                .area()
-                .centered(Constraint::Percentage(60), Constraint::Percentage(20));
-            // clears out any background in the area before rendering the popup
-            frame.render_widget(Clear, centered_area);
-            let text: String = app_state.shared_buffer.to_string();
-
-            let pivot = app_state.shared_buffer.position();
-            let (left, cursor, right) = split_text_by_cursor(&text, pivot);
-            let text = line![left, cursor.bold(), right];
-            let paragraph = Paragraph::new(text).block(popup_block);
-            frame.render_widget(paragraph, centered_area);
-        }
-        AppEvent::DeleteCurrentProfile => {
-            let Some(selected) =
-                app_state.select_idx_from_state(ListableComponentType::ProfileState)
-            else {
-                return;
-            };
-            app_state.startup.profiles.remove(selected);
-            app_state.clear_event();
-            app_state.mode(crate::state::AppMode::Normal);
-            app_state.send_ui_event(UIEvent::Refresh);
-        },
         AppEvent::Down => {
             match app_state.current_list_type {
-                ListableComponentType::ProfileState => {app_state.component_state.profile_list_state.select_next();}
-                ListableComponentType::ProfileAppsState => {app_state.component_state.profile_apps_state.select_next();}
+                ListableComponentType::ProfileState => {
+                    app_state.component_state.profile_list_state.select_next();
+                }
+                ListableComponentType::ProfileAppsState => {
+                    app_state.component_state.profile_apps_state.select_next();
+                }
             };
 
             app_state.clear_event();
-        },
+        }
         AppEvent::Up => {
-            match app_state.current_list_type  {
-                ListableComponentType::ProfileState => {app_state.component_state.profile_list_state.select_previous();}
-                ListableComponentType::ProfileAppsState => {app_state.component_state.profile_apps_state.select_previous();}
+            match app_state.current_list_type {
+                ListableComponentType::ProfileState => {
+                    app_state
+                        .component_state
+                        .profile_list_state
+                        .select_previous();
+                }
+                ListableComponentType::ProfileAppsState => {
+                    app_state
+                        .component_state
+                        .profile_apps_state
+                        .select_previous();
+                }
             };
             app_state.clear_event();
         }
@@ -226,12 +175,15 @@ fn handle_event(frame: &mut Frame, app_state: &mut AppState, app_event: AppEvent
             app_state.clear_event();
             app_state.send_ui_event(UIEvent::Refresh);
             app_state.component_state.profile_apps_state.select(Some(0));
-        },
+        }
         AppEvent::Left => {
             app_state.component_state.profile_apps_state.select(None);
             app_state.current_list_type = ListableComponentType::ProfileState;
             app_state.clear_event();
             app_state.send_ui_event(UIEvent::Refresh);
+        }
+        AppEvent::KeyboardShortcutEvent(event) => {
+            handle_keyboard_shortcut_event(frame, &event, app_state)
         }
         _ => {}
     };
@@ -252,6 +204,151 @@ fn split_text_by_cursor(str: &str, cursor: usize) -> (&str, &str, &str) {
                 return (left, right, "");
             };
             (left, cursor, new_right)
+        }
+    }
+}
+
+fn handle_keyboard_shortcut_event(
+    frame: &mut Frame,
+    event: &ShortcutEvent,
+    app_state: &mut AppState,
+) {
+    match event {
+        ShortcutEvent::New(state) => {
+            match state {
+                EventState::WaitingCompletation => {
+                    match &app_state.current_list_type {
+                        ListableComponentType::ProfileState => {
+                            app_state.startup.profiles.push(StartupProfile {
+                                profile: app_state.buffer.to_string(),
+                                apps: vec![],
+                            });
+                        }
+                        ListableComponentType::ProfileAppsState => {
+                            let Some(selected_idx) = app_state
+                                .select_idx_from_state(&ListableComponentType::ProfileState)
+                            else {
+                                return;
+                            };
+                            if let Some(profile) = app_state.startup.profiles.get_mut(selected_idx)
+                            {
+                                profile.apps.push(StartupApp {
+                                    name: app_state.buffer.to_string(),
+                                    args: vec![],
+                                    path: String::from(""),
+                                });
+                            }
+                        }
+                    }
+
+                    app_state.clear_event();
+                    app_state.clear_buffer();
+                    app_state.mode(crate::state::AppMode::Normal);
+                    app_state.send_ui_event(UIEvent::Refresh);
+                    return;
+                }
+                EventState::Started => {}
+                _ => {}
+            }
+
+            app_state.push_callback_event(crate::state::HandleEventCallbackCommand::DisplayPopup(
+                String::from("Create new profile"),
+            ));
+        }
+        ShortcutEvent::Rename(state) => {
+            match state {
+                EventState::Started => {}
+                EventState::WaitingCompletation => {
+                    let Some(selected_idx) = app_state.select_idx_from_current_component() else {
+                        return;
+                    };
+                    let buffer = app_state.buffer.to_string();
+                    match app_state.current_list_type {
+                        ListableComponentType::ProfileState => {
+                            app_state
+                                .startup
+                                .profiles
+                                .get_mut(selected_idx)
+                                .map(|profile| profile.profile = buffer);
+                        }
+                        ListableComponentType::ProfileAppsState => {
+                            let Some(selected_profile) = app_state
+                                .select_idx_from_state(&ListableComponentType::ProfileState)
+                            else {
+                                return;
+                            };
+                            app_state
+                                .startup
+                                .profiles
+                                .get_mut(selected_profile)
+                                .map(|profile| profile.apps.get_mut(selected_idx))
+                                .map(|app| app.map(|app| app.name = buffer));
+                        }
+                    }
+                    app_state.clear_event();
+                    app_state.clear_buffer();
+                    app_state.mode(Normal);
+                    app_state.send_ui_event(UIEvent::Refresh);
+                    return;
+                }
+                _ => {}
+            }
+
+            app_state.push_callback_event(crate::state::HandleEventCallbackCommand::DisplayPopup(
+                String::from("Rename current profile"),
+            ));
+        }
+        ShortcutEvent::Delete => {
+            let Some(selected_idx) = app_state.select_idx_from_current_component() else {
+                return;
+            };
+            match app_state.current_list_type {
+                ListableComponentType::ProfileState => {
+                    app_state.startup.profiles.remove(selected_idx);
+                }
+                ListableComponentType::ProfileAppsState => {
+                    let Some(selected_profile) =
+                        app_state.select_idx_from_state(&ListableComponentType::ProfileState)
+                    else {
+                        return;
+                    };
+                    app_state
+                        .startup
+                        .profiles
+                        .get_mut(selected_profile)
+                        .map(|profile| Some(profile.apps.remove(selected_idx)));
+                }
+            }
+
+            app_state.clear_event();
+            app_state.mode(crate::state::AppMode::Normal);
+            app_state.send_ui_event(UIEvent::Refresh);
+        }
+    }
+}
+
+fn display_popup(title: &str, frame: &mut Frame, app_state: &mut AppState) {
+    let popup_block = Block::bordered().title(title);
+    let centered_area = frame
+        .area()
+        .centered(Constraint::Percentage(60), Constraint::Percentage(20));
+    // clears out any background in the area before rendering the popup
+    frame.render_widget(Clear, centered_area);
+    let text: String = app_state.buffer.to_string();
+
+    let pivot = app_state.buffer.position();
+    let (left, cursor, right) = split_text_by_cursor(&text, pivot);
+    let text = line![left, cursor.bold(), right];
+    let paragraph = Paragraph::new(text).block(popup_block);
+    frame.render_widget(paragraph, centered_area);
+}
+
+fn handle_callback_event(frame: &mut Frame, app_state: &mut AppState) {
+    while let Some(event) = app_state.pop_callback_event() {
+        match event {
+            crate::state::HandleEventCallbackCommand::DisplayPopup(title) => {
+                display_popup(&title, frame, app_state)
+            }
         }
     }
 }
